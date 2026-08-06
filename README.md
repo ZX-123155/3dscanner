@@ -84,4 +84,24 @@ conda run -n 3dscanner python scripts/pipeline.py --input input --output output 
 
 - **CUDA 不可用**：确认 `nvidia-smi` 有输出，且 PyTorch 是 cu121 版本
 - **重建失败/点数太少**：检查照片重叠率、光照；增加照片数量
-- **训练很慢**：`--max-steps` 调小（默认 30000），或 `--data-factor 2` 降分辨率
+- **训练很慢**：`--max-steps` 调小（默认 30000），或 `--max-size` 降低分辨率（默认 1024）
+
+### Windows + gsplat 特殊说明
+
+gsplat 需要 JIT 编译 CUDA 扩展（首次运行需 5-10 分钟），需要：
+1. conda 环境内安装 CUDA 编译工具：
+   ```bash
+   conda install -n 3dscanner -c nvidia cuda-nvcc=12.6 cuda-cudart-dev=12.6 cuda-cccl=12.6
+   ```
+   > 注意：MSVC 14.44+ 需要 CUDA ≥ 12.6（12.4 会报 STL1002）
+2. 运行训练时需先加载 MSVC 环境（`scripts/_dev/run_env.bat` 已封装）：
+   ```bash
+   # 方式一：直接调用封装脚本
+   scripts\_dev\run_env.bat scripts\train_3dgs.py --colmap output --out models/3dgs
+
+   # 方式二：手动加载环境后运行
+   call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+   set CUDA_HOME=C:\Users\luyicheng\miniconda3\envs\3dscanner
+   python scripts\train_3dgs.py --colmap output --out models/3dgs
+   ```
+3. 若报 `fatal error C1083: crt/host_config.h 找不到`，说明 conda 的 CUDA 头文件被损坏（safe-delete 干扰），从 `Library/include` 复制到环境根 `include/`
