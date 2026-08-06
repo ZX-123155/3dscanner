@@ -70,16 +70,22 @@ def start_build() -> str:
 
 
 def save_upload(filename: str, data: bytes) -> tuple[int, str]:
-    """保存一个上传的文件，返回 (保存数量, 消息)"""
+    """保存一个上传的文件（自动处理重名：_2, _3, ...），返回 (保存数量, 消息)"""
     safe_name = Path(filename).name  # 防路径穿越
     if not safe_name.lower().endswith((".jpg", ".jpeg", ".png")):
         return 0, f"跳过非图片文件: {safe_name}"
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stem = Path(safe_name).stem
+    ext = Path(safe_name).suffix
     dest = INPUT_DIR / safe_name
-    with dest.open("wb") as f:
-        f.write(data)
+    # 重名自动加序号（避免手机浏览器拍照时同一时间戳覆盖）
+    i = 1
+    while dest.exists():
+        dest = INPUT_DIR / f"{stem}_{i}{ext}"
+        i += 1
+    dest.write_bytes(data)
     logger.info(f"已保存照片: {dest.name} ({len(data)/1e6:.1f} MB)")
-    return 1, f"已保存 {safe_name}"
+    return 1, f"已保存 {dest.name}"
 
 
 def count_photos() -> int:
