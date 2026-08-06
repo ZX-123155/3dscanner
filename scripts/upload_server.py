@@ -66,8 +66,14 @@ def start_build() -> str:
                 _build_state["log"] += line
                 if len(_build_state["log"]) > 200_000:  # 截断日志
                     _build_state["log"] = _build_state["log"][-200_000:]
+                # 同步打印到电脑终端（手机页面同源）
+                try:
+                    print(line, end="", flush=True)
+                except UnicodeEncodeError:
+                    print(line.encode("utf-8", "replace").decode("gbk", "replace"), end="", flush=True)
             proc.wait()
             _build_state["last_result"] = ("成功" if proc.returncode == 0 else f"失败(exit={proc.returncode})")
+            print(f"\n[重建完成: {_build_state['last_result']}]\n", flush=True)
         finally:
             _build_state["running"] = False
 
