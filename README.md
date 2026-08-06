@@ -35,7 +35,7 @@ conda run -n 3dscanner pip install gsplat scipy opencv-python-headless imageio i
 
 - **方式 A（推荐）：局域网直传**——手机连同一 WiFi，电脑启动上传服务，手机浏览器传照片并一键触发重建：
   ```bash
-  conda run -n 3dscanner python scripts/upload_server.py
+  C:\Users\luyicheng\miniconda3\envs\3dscanner\python.exe scripts/upload_server.py
   # 手机浏览器打开 http://<电脑局域网IP>:8000
   ```
 - **方式 B**：微信/QQ 文件传输助手另存到 `input/`
@@ -50,13 +50,18 @@ conda run -n 3dscanner pip install gsplat scipy opencv-python-headless imageio i
 ### 3. 一键重建（COLMAP + 3DGS）
 
 ```bash
+# 先激活环境（注意：不能用 conda run，该环境带 CUDA 激活脚本会报错）
+conda activate 3dscanner
+
 # 方式一：分步执行
-conda run -n 3dscanner python scripts/run_colmap.py --input input --output output
-conda run -n 3dscanner python scripts/train_3dgs.py --colmap output --out models/3dgs
+python scripts/run_colmap.py --input input --output output
+python scripts/train_3dgs.py --colmap output --out models/3dgs
 
 # 方式二：一键全流程（推荐）
-conda run -n 3dscanner python scripts/pipeline.py --input input --output output --model models/3dgs
+python scripts/pipeline.py --input input --output output --model models/3dgs
 ```
+
+> 如果 `conda activate` 也报 "Did not find VSINSTALLDIR"，那是环境里 CUDA 激活脚本在查 VS2017，不影响后续命令执行，直接忽略即可。
 
 > 训练 3DGS 时如遇 CUDA 编译问题，用 `scripts/_dev/run_env.bat` 封装脚本运行（详见 docs/开发日志.md）
 
