@@ -1,10 +1,10 @@
-# 一键全流程：照片 → COLMAP → 3DGS → 渲染
+"""一键全流程：照片 → COLMAP → 3DGS → 渲染
 
 用法:
   python scripts/pipeline.py --input <照片目录> --output <COLMAP输出> --model <模型目录>
 
 示例:
-  conda run -n 3dscanner python scripts/pipeline.py --input input --output output --model models/3dgs
+  python scripts/pipeline.py --input input --output output --model models/3dgs
 """
 
 import argparse
