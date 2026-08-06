@@ -69,20 +69,25 @@ def start_build() -> str:
     return "重建已启动，请到页面查看进度"
 
 
+def next_img_number() -> int:
+    """返回下一个 img_ 序号（扫描现有文件最大编号 +1）"""
+    max_n = 0
+    if INPUT_DIR.exists():
+        for p in INPUT_DIR.iterdir():
+            m = re.fullmatch(r"img_(\d+)\.[a-zA-Z0-9]+", p.name)
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+    return max_n + 1
+
+
 def save_upload(filename: str, data: bytes) -> tuple[int, str]:
-    """保存一个上传的文件（自动处理重名：_2, _3, ...），返回 (保存数量, 消息)"""
+    """保存上传文件，统一命名为 img_001.jpg / img_002.jpg（顺序编号，绝不覆盖）"""
     safe_name = Path(filename).name  # 防路径穿越
     if not safe_name.lower().endswith((".jpg", ".jpeg", ".png")):
         return 0, f"跳过非图片文件: {safe_name}"
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    stem = Path(safe_name).stem
-    ext = Path(safe_name).suffix
-    dest = INPUT_DIR / safe_name
-    # 重名自动加序号（避免手机浏览器拍照时同一时间戳覆盖）
-    i = 1
-    while dest.exists():
-        dest = INPUT_DIR / f"{stem}_{i}{ext}"
-        i += 1
+    ext = Path(safe_name).suffix.lower().replace("jpeg", "jpg")
+    dest = INPUT_DIR / f"img_{next_img_number():03d}{ext}"
     dest.write_bytes(data)
     logger.info(f"已保存照片: {dest.name} ({len(data)/1e6:.1f} MB)")
     return 1, f"已保存 {dest.name}"
