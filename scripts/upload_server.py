@@ -52,9 +52,15 @@ def start_build() -> str:
 
     def _run():
         try:
+            # 强制子进程用 UTF-8 输出（Windows 默认 GBK 会让中文乱码）
+            import os
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUTF8"] = "1"
             proc = subprocess.Popen(
                 PIPELINE_CMD, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", cwd=str(PROJECT_ROOT),
+                text=True, encoding="utf-8", errors="replace",
+                cwd=str(PROJECT_ROOT), env=env,
             )
             for line in proc.stdout:
                 _build_state["log"] += line
