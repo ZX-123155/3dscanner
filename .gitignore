@@ -1,0 +1,13 @@
+# 数据与中间产物
+input/*.JPG
+input/*.jpg
+input/*.png
+output/
+models/
+*.ply
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.conda/
