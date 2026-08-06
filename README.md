@@ -31,7 +31,17 @@ conda run -n 3dscanner pip install gsplat scipy opencv-python-headless imageio i
 
 ### 2. 拍摄照片
 
-把手机/相机拍摄的照片放入 `input/` 目录。**拍摄建议**：
+手机拍摄照片，通过任一方式放入 `input/` 目录：
+
+- **方式 A（推荐）：局域网直传**——手机连同一 WiFi，电脑启动上传服务，手机浏览器传照片并一键触发重建：
+  ```bash
+  conda run -n 3dscanner python scripts/upload_server.py
+  # 手机浏览器打开 http://<电脑局域网IP>:8000
+  ```
+- **方式 B**：微信/QQ 文件传输助手另存到 `input/`
+- **方式 C**：数据线复制到 `input/`
+
+**拍摄建议**：
 - 围绕物体转一圈，相邻照片重叠 60% 以上
 - 保持光照均匀，避免过曝/过暗
 - 物体放在纹理丰富的背景前（不要纯白/纯黑）
@@ -47,6 +57,8 @@ conda run -n 3dscanner python scripts/train_3dgs.py --colmap output --out models
 # 方式二：一键全流程（推荐）
 conda run -n 3dscanner python scripts/pipeline.py --input input --output output --model models/3dgs
 ```
+
+> 训练 3DGS 时如遇 CUDA 编译问题，用 `scripts/_dev/run_env.bat` 封装脚本运行（详见 docs/开发日志.md）
 
 ### 4. 查看结果
 
@@ -70,13 +82,14 @@ conda run -n 3dscanner python scripts/pipeline.py --input input --output output 
 
 ```
 3dscanner/
-├── input/          # 拍摄的照片（手动放入）
+├── input/          # 拍摄的照片（上传服务器/手动放入）
 ├── output/         # COLMAP 重建结果（自动生成）
 ├── models/         # 3DGS 模型（自动生成）
 ├── scripts/
-│   ├── run_colmap.py   # COLMAP 重建管线
-│   ├── train_3dgs.py   # 3DGS 训练
-│   └── pipeline.py     # 一键全流程
+│   ├── upload_server.py  # 局域网照片上传服务器（手机 WiFi 直传）
+│   ├── run_colmap.py     # COLMAP 重建管线
+│   ├── train_3dgs.py     # 3DGS 训练
+│   └── pipeline.py       # 一键全流程
 └── docs/           # 文档
 ```
 
