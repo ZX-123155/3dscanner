@@ -92,9 +92,9 @@ def load_colmap_data(colmap_dir: Path, images_dir: Path, max_size: int = 1600):
         Ks.append(K)
         image_names.append(img.name)
 
-    # 加载图片并缩放到 max_size
+    # 加载图片并缩放到 max_size（K 同步缩放！）
     images, scales = [], []
-    for name in image_names:
+    for i, name in enumerate(image_names):
         with Image.open(images_dir / name) as im:
             img = np.array(im.convert("RGB"), dtype=np.float32) / 255.0
         h, w = img.shape[:2]
@@ -102,6 +102,10 @@ def load_colmap_data(colmap_dir: Path, images_dir: Path, max_size: int = 1600):
         if s < 1.0:
             img = np.array(Image.fromarray((img * 255).astype(np.uint8)).resize(
                 (int(w * s), int(h * s)), Image.BILINEAR), dtype=np.float32) / 255.0
+            # 内参同步缩放（关键！否则所有点投影到画面外 -> 黑屏）
+            K = Ks[i].copy()
+            K[0, 0] *= s; K[1, 1] *= s; K[0, 2] *= s; K[1, 2] *= s
+            Ks[i] = K
         images.append(img)
         scales.append(s)
 
@@ -128,17 +132,16 @@ def get_camera_rays(c2w, K, width, height):
 
 
 def render_360(data, params, num_frames: int = 60, out_path: Path = None, device="cuda"):
-    """环绕视角渲染"""
-    # 取第一个相机作为参考
-    c2w0 = torch.tensor(data["c2ws"][0], dtype=torch.float32)
-    center = c2w0[:3, 3].clone()
-    # 平均相机位置做旋转中心
+    """环绕视角渲染（绕点云中心旋转）"""
+    # 旋转中心 = 点云中心（中位数，抗离群点）
+    pts = params["means"].detach().cpu().numpy()
+    center = torch.tensor(np.median(pts, axis=0), dtype=torch.float32)
+    # 相机距离用中位数（抗离群）
     all_c2w = torch.tensor(data["c2ws"], dtype=torch.float32)
-    center = all_c2w[:, :3, 3].mean(dim=0)
+    dists = torch.norm(all_c2w[:, :3, 3] - center, dim=1)
+    radius = torch.median(dists).item() * 1.0
 
     up = torch.tensor([0.0, 1.0, 0.0])
-    radius = (all_c2w[0, :3, 3] - center).norm().item()
-
     h = data["images"][0].shape[0]
     w = data["images"][0].shape[1]
 
@@ -146,11 +149,13 @@ def render_360(data, params, num_frames: int = 60, out_path: Path = None, device
     for i in range(num_frames):
         theta = 2 * math.pi * i / num_frames
         cam_pos = center + torch.tensor([radius * math.cos(theta), 0.0, radius * math.sin(theta)])
+        # 相机看向中心
         forward = (center - cam_pos) / torch.norm(center - cam_pos)
         right = torch.cross(forward, up)
         right = right / torch.norm(right)
         new_up = torch.cross(right, forward)
-        rot = torch.stack([right, new_up, -forward], dim=1)
+        # gsplat/OpenGL 约定：相机看向 -z，旋转矩阵 z 轴 = forward
+        rot = torch.stack([right, new_up, forward], dim=1)
         c2w = torch.eye(4)
         c2w[:3, :3] = rot
         c2w[:3, 3] = cam_pos
@@ -162,14 +167,14 @@ def render_360(data, params, num_frames: int = 60, out_path: Path = None, device
             colors, alphas, _ = rasterization(
                 params["means"],
                 params["quats"],
-                params["scales"],
-                params["opacities"],
-                params["sh0"] if "sh0" in params else params["colors"],
+                torch.exp(params["scales"]),
+                torch.sigmoid(params["opacities"]),
+                params["colors"],
                 viewmats=viewmat,
                 Ks=K,
                 width=w,
                 height=h,
-                sh_degree=0,
+                sh_degree=None,
                 backgrounds=torch.zeros(3, device=device),
             )
         img = colors[0].clamp(0, 1).cpu().numpy()
@@ -185,7 +190,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="3DGS 训练")
     parser.add_argument("--colmap", type=Path, required=True, help="COLMAP 工作目录（含 images/ 和 sparse/0）")
     parser.add_argument("--out", type=Path, required=True, help="输出目录")
-    parser.add_argument("--max-steps", type=int, default=30000)
+    parser.add_argument("--max-steps", type=int, default=3000, help="训练步数（验证用 3000，正式可 30000）")
     parser.add_argument("--max-size", type=int, default=1024, help="训练图片最大边")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
@@ -202,32 +207,43 @@ def main() -> None:
     N_imgs = len(data["images"])
     logger.info(f"加载完成: {N_imgs} 张图, 分辨率 {data['images'][0].shape}")
 
-    # 2. 初始化高斯
-    n_init = min(len(data["init_points"]), 100_000)
-    idx = np.random.choice(len(data["init_points"]), n_init, replace=False)
-    means = torch.tensor(data["init_points"][idx], dtype=torch.float32, device=device)
-    init_colors = torch.tensor(data["init_colors"][idx], dtype=torch.float32, device=device)
+    # 2. 初始化高斯（过滤离群点：以中位数为中心，距离 > 2.5×中位数距离的剔除）
+    pts_all = data["init_points"]
+    med = np.median(pts_all, axis=0)
+    dists = np.linalg.norm(pts_all - med, axis=1)
+    med_dist = np.median(dists)
+    inlier = dists < 5.0 * med_dist
+    pts_clean = pts_all[inlier]
+    cols_clean = data["init_colors"][inlier]
+    logger.info(f"离群点过滤: {len(pts_all)} -> {len(pts_clean)}")
+
+    n_init = min(len(pts_clean), 100_000)
+    idx = np.random.choice(len(pts_clean), n_init, replace=False)
+    means = torch.tensor(pts_clean[idx], dtype=torch.float32, device=device)
+    init_colors = torch.tensor(cols_clean[idx], dtype=torch.float32, device=device)
 
     params = {
         "means": means.clone().requires_grad_(True),
-        "scales": torch.log(torch.full((n_init, 3), 0.01, device=device)).requires_grad_(True),
+        "scales": torch.log(torch.full((n_init, 3), 0.05, device=device)).requires_grad_(True),
         "quats": torch.tensor([1.0, 0.0, 0.0, 0.0], device=device).repeat(n_init, 1).requires_grad_(True),
-        "opacities": torch.logit(torch.full((n_init,), 0.1, device=device)).requires_grad_(True),
-        "sh0": init_colors.unsqueeze(1).clone().requires_grad_(True),  # (N,1,3) K=1
+        "opacities": torch.logit(torch.full((n_init,), 0.5, device=device)).requires_grad_(True),
+        "colors": init_colors.clone().requires_grad_(True),  # (N,3) 直接 RGB，sh_degree=None
     }
     logger.info(f"初始化 {n_init} 个高斯")
 
     # 3. 优化器与 densify 策略
-    # gsplat 要求：每个参数一个独立优化器（字典形式），便于 densify 时重置
+    # 每个参数一个独立优化器（字典形式），便于 densify 时重置
+    # 用普通 Adam + absgrad（避免稀疏梯度兼容问题，简化验证）
     optimizer = {
         "means": Adam([params["means"]], lr=1.6e-4),
         "scales": Adam([params["scales"]], lr=5e-3),
         "quats": Adam([params["quats"]], lr=1e-3),
         "opacities": Adam([params["opacities"]], lr=5e-2),
-        "sh0": Adam([params["sh0"]], lr=2.5e-3),
+        "colors": Adam([params["colors"]], lr=2.5e-3),
     }
-    strategy = DefaultStrategy(verbose=True)
+    strategy = DefaultStrategy(verbose=True, absgrad=True)
     strategy.check_sanity(params, optimizer)
+    state = strategy.initialize_state()
 
     # 预计算每个相机的 viewmat/K
     viewmats, Ks = [], []
@@ -252,15 +268,16 @@ def main() -> None:
         colors, alphas, info = rasterization(
             params["means"],
             params["quats"],
-            params["scales"],
-            params["opacities"],
-            params["sh0"],
+            torch.exp(params["scales"]),      # 对数空间 -> 真实尺度
+            torch.sigmoid(params["opacities"]),  # logit -> 透明度 (0,1)
+            params["colors"],
             viewmats=vm,
             Ks=K,
             width=w,
             height=h,
-            sh_degree=0,
+            sh_degree=None,  # 直接 RGB（不用 SH）
             backgrounds=torch.zeros(3, device=device),
+            absgrad=True,  # absgrad 模式下 densify 可用（无需 sparse_grad）
         )
 
         # L1 + SSIM 损失
@@ -268,13 +285,13 @@ def main() -> None:
         ssim = ssim_loss(colors, gt)
         loss = 0.8 * l1 + 0.2 * ssim
 
+        # densify / prune（1.5.3 API：pre_backward + post_backward）
+        strategy.step_pre_backward(params, optimizer, state, step, info)
         loss.backward()
+        strategy.step_post_backward(params, optimizer, state, step, info, packed=True)
         for opt in optimizer.values():
             opt.step()
             opt.zero_grad(set_to_none=True)
-
-        # densify / prune
-        strategy.step(step, params, optimizer, loss=loss.detach(), info=info)
 
         if step % 1000 == 0:
             elapsed = time.time() - t0
@@ -294,13 +311,15 @@ def main() -> None:
 
     # 7. 导出 PLY（兼容 3DGS 查看器）
     from gsplat.exporter import export_splats
+    n = params["means"].shape[0]
+    shN = torch.zeros(n, 0, 3, device=device)  # 无高阶 SH 系数
     export_splats(
         means=params["means"],
         scales=torch.exp(params["scales"]),
         quats=params["quats"],
         opacities=torch.sigmoid(params["opacities"]),
-        sh0=params["sh0"],
-        shN=None,
+        sh0=params["colors"].unsqueeze(1),
+        shN=shN,
         format="ply",
         save_to=str(args.out / "model.ply"),
     )

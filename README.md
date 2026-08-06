@@ -54,8 +54,8 @@ conda run -n 3dscanner python scripts/pipeline.py --input input --output output 
 |------|------|------|
 | 稀疏点云 | `output/sparse.ply` | COLMAP 稀疏重建点云 |
 | 稠密点云 | `output/fused.ply` | 稠密重建（需 `--dense`） |
-| 3DGS 模型 | `models/3dgs/` | 训练好的高斯泼溅模型 |
-| 渲染视频 | `models/3dgs/renders/` | 环绕视角渲染结果 |
+| 3DGS 模型 | `models/3dgs/model.ply` | 训练好的高斯泼溅模型（兼容常见 3DGS 查看器） |
+| 渲染视频 | `models/3dgs/orbit.mp4` | 环绕视角渲染视频 |
 
 ## 手机拍摄工作流
 
