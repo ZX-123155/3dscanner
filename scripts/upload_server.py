@@ -53,6 +53,10 @@ def start_build() -> str:
         return "重建正在进行中，请稍候"
     _build_state["running"] = True
     _build_state["log"] = ""
+    # 每次重建的日志落盘（文件名带时间戳，方便随时打开查看实时进度）
+    from datetime import datetime
+    log_file = PROJECT_ROOT / "output" / f"rebuild_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
     def _run():
         try:
@@ -66,15 +70,18 @@ def start_build() -> str:
                 text=True, encoding="utf-8", errors="replace",
                 cwd=str(PROJECT_ROOT), env=env,
             )
-            for line in proc.stdout:
-                _build_state["log"] += line
-                if len(_build_state["log"]) > 200_000:  # 截断日志
-                    _build_state["log"] = _build_state["log"][-200_000:]
-                # 同步打印到电脑终端（手机页面同源）
-                try:
-                    print(line, end="", flush=True)
-                except UnicodeEncodeError:
-                    print(line.encode("utf-8", "replace").decode("gbk", "replace"), end="", flush=True)
+            with log_file.open("w", encoding="utf-8") as lf:
+                for line in proc.stdout:
+                    _build_state["log"] += line
+                    if len(_build_state["log"]) > 200_000:  # 截断日志
+                        _build_state["log"] = _build_state["log"][-200_000:]
+                    lf.write(line)      # 实时写入日志文件
+                    lf.flush()
+                    # 同步打印到电脑终端（手机页面同源）
+                    try:
+                        print(line, end="", flush=True)
+                    except UnicodeEncodeError:
+                        print(line.encode("utf-8", "replace").decode("gbk", "replace"), end="", flush=True)
             proc.wait()
             _build_state["last_result"] = ("成功" if proc.returncode == 0 else f"失败(exit={proc.returncode})")
             print(f"\n[重建完成: {_build_state['last_result']}]\n", flush=True)
@@ -82,7 +89,7 @@ def start_build() -> str:
             _build_state["running"] = False
 
     threading.Thread(target=_run, daemon=True).start()
-    return "重建已启动，请到页面查看进度"
+    return f"重建已启动，日志实时写入: {log_file}"
 
 
 def next_img_number() -> int:
