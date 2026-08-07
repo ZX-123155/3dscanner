@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 
 
-def run_step(cmd: list[str], desc: str) -> None:
-    print(f"\n{'='*60}\n[1/2] {desc}\n{'='*60}")
+def run_step(cmd: list[str], desc: str, step_no: int, total: int = 2) -> None:
+    print(f"\n{'='*60}\n[{step_no}/{total}] {desc}\n{'='*60}", flush=True)
     result = subprocess.run([str(c) for c in cmd])
     if result.returncode != 0:
         raise RuntimeError(f"步骤失败: {desc}")
@@ -36,7 +36,7 @@ def main() -> None:
     colmap_cmd = [py, str(script_dir / "run_colmap.py"), "--input", str(args.input), "--output", str(args.output)]
     if not args.dense:
         colmap_cmd.append("--no-dense")
-    run_step(colmap_cmd, "COLMAP 三维重建")
+    run_step(colmap_cmd, "COLMAP 三维重建", 1)
 
     # 2. 3DGS 训练
     gs_cmd = [
@@ -45,7 +45,7 @@ def main() -> None:
         "--out", str(args.model),
         "--max-steps", str(args.max_steps),
     ]
-    run_step(gs_cmd, "3D Gaussian Splatting 训练")
+    run_step(gs_cmd, "3D Gaussian Splatting 训练", 2)
 
     print(f"\n{'='*60}\n✅ 全流程完成！\n  点云: {args.output / 'sparse.ply'}\n  3DGS: {args.model}\n{'='*60}")
 

@@ -24,7 +24,11 @@ from loguru import logger
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INPUT_DIR = PROJECT_ROOT / "input"
 SCRIPT_DIR = PROJECT_ROOT / "scripts"
-PIPELINE_CMD = [sys.executable, str(SCRIPT_DIR / "pipeline.py"),
+DEV_DIR = SCRIPT_DIR / "_dev"
+# 通过 run_env.bat 启动（加载 MSVC + CUDA 环境，gsplat JIT 编译必需；直接 sys.executable 会因找不到 cl.exe 失败）
+RUN_ENV_BAT = DEV_DIR / "run_env.bat"
+PIPELINE_CMD = ["cmd.exe", "/c", str(RUN_ENV_BAT),
+                str(SCRIPT_DIR / "pipeline.py"),
                 "--input", str(INPUT_DIR),
                 "--output", str(PROJECT_ROOT / "output"),
                 "--model", str(PROJECT_ROOT / "models" / "3dgs")]
