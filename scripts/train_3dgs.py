@@ -169,7 +169,7 @@ def render_360(data, params, num_frames: int = 60, out_path: Path = None, device
                 params["quats"],
                 torch.exp(params["scales"]),
                 torch.sigmoid(params["opacities"]),
-                params["colors"],
+                torch.sigmoid(params["colors"]),  # 修复：sigmoid 限制在 [0,1]，避免 Adam 优化到异常值
                 viewmats=viewmat,
                 Ks=K,
                 width=w,
@@ -241,7 +241,17 @@ def main() -> None:
         "opacities": Adam([params["opacities"]], lr=5e-2),
         "colors": Adam([params["colors"]], lr=2.5e-3),
     }
-    strategy = DefaultStrategy(verbose=True, absgrad=True)
+    # densify 参数针对小物体/手机拍摄场景调优（默认值按 Mip-NeRF 大场景，会让高斯数爆炸到 80万+）
+    # 关键：提高分裂阈值(grow_grad2d)、降低分裂频率(refine_every)、提前停止分裂、更积极剪枝
+    strategy = DefaultStrategy(
+        verbose=True,
+        absgrad=True,
+        grow_grad2d=0.0006,        # 默认 0.0002 → 提高 3 倍，减少无谓分裂
+        refine_every=200,          # 默认 100 → 降低分裂频率
+        refine_stop_iter=8_000,    # 默认 15000 → 更早停止分裂
+        prune_opa=0.01,            # 默认 0.005 → 更积极删除半透明冗余
+        prune_scale3d=0.2,         # 默认 0.1 → 更强力删除大尺度漂浮物
+    )
     strategy.check_sanity(params, optimizer)
     state = strategy.initialize_state()
 
@@ -270,7 +280,7 @@ def main() -> None:
             params["quats"],
             torch.exp(params["scales"]),      # 对数空间 -> 真实尺度
             torch.sigmoid(params["opacities"]),  # logit -> 透明度 (0,1)
-            params["colors"],
+            torch.sigmoid(params["colors"]),     # 修复：sigmoid 限制 colors 在 [0,1]，避免训练时飘到异常值
             viewmats=vm,
             Ks=K,
             width=w,
@@ -313,12 +323,17 @@ def main() -> None:
     from gsplat.exporter import export_splats
     n = params["means"].shape[0]
     shN = torch.zeros(n, 0, 3, device=device)  # 无高阶 SH 系数
+    # 关键修复：f_dc 是 SH 0 阶系数，不是 RGB！
+    # 训练时 colors 已用 sigmoid 限制在 [0,1]，导出也必须 sigmoid 才能一致
+    SH_C0 = 0.28209479177387814
+    rgb = torch.sigmoid(params["colors"])
+    sh0 = (rgb - 0.5) / SH_C0
     export_splats(
         means=params["means"],
         scales=torch.exp(params["scales"]),
         quats=params["quats"],
         opacities=torch.sigmoid(params["opacities"]),
-        sh0=params["colors"].unsqueeze(1),
+        sh0=sh0.unsqueeze(1),
         shN=shN,
         format="ply",
         save_to=str(args.out / "model.ply"),
