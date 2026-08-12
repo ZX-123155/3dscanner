@@ -340,6 +340,16 @@ def main() -> None:
     )
     logger.info(f"PLY 已导出: {args.out / 'model.ply'}")
 
+    # 8. 自动导出 Brush 兼容版（scale→log, opacity→logit）
+    # Brush GUI/CLI 加载 PLY 时把 scale 当 log、opacity 当 logit（内部参数空间），
+    # 直接用标准 PLY 会高斯膨胀成"光球"。转换后两个查看器都可用。
+    try:
+        from convert_to_brush import convert
+        convert(args.out / "model.ply", args.out / "model_brush.ply")
+        logger.info(f"Brush 兼容版已导出: {args.out / 'model_brush.ply'}")
+    except Exception as e:
+        logger.warning(f"Brush 兼容版导出失败（不影响标准 PLY）: {e}")
+
 
 if __name__ == "__main__":
     main()
