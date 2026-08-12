@@ -71,8 +71,11 @@ python scripts/pipeline.py --input input --output output --model models/3dgs
 |------|------|------|
 | 稀疏点云 | `output/sparse.ply` | COLMAP 稀疏重建点云 |
 | 稠密点云 | `output/fused.ply` | 稠密重建（需 `--dense`） |
-| 3DGS 模型 | `models/3dgs/model.ply` | 训练好的高斯泼溅模型（兼容常见 3DGS 查看器） |
+| 3DGS 模型 | `models/3dgs/model.ply` | 标准 3DGS 格式（SuperSplat/antimatter15 等查看器） |
+| 3DGS 模型 | `models/3dgs/model_brush.ply` | **Brush 兼容格式**（scale 存 log、opacity 存 logit，拖进 Brush GUI 用这个） |
 | 渲染视频 | `models/3dgs/orbit.mp4` | 环绕视角渲染视频 |
+
+> ⚠️ **PLY 格式说明**：3DGS 的 PLY 没有统一标准。gsplat/原版导出存**真实 scale**，Brush 加载时把 scale 当 **log(scale)**——直接用标准 PLY 打开 Brush 会"光球"（高斯膨胀）。`model_brush.ply` 已自动转换，用 Brush 时选它即可。
 
 ## 手机拍摄工作流
 
