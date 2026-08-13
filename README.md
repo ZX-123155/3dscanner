@@ -1,11 +1,12 @@
 # 3D 物体扫描仪 (3D Scanner)
 
-用手机/相机拍摄一组照片 → COLMAP 重建点云 → 3D Gaussian Splatting 渲染，生成可交互的 3D 场景。
+用手机/相机拍摄一组照片 **或一段视频** → COLMAP 重建点云 → 3D Gaussian Splatting 渲染，生成可交互的 3D 场景。
 
 ## 流程总览
 
 ```
-拍摄照片 → input/ → COLMAP 稀疏重建 → 3DGS 训练 → 渲染视频/点云
+路线 A（照片）: 拍摄照片 → input/ → COLMAP 稀疏重建 → 3DGS 训练 → 渲染视频/点云
+路线 B（视频）: 拍摄视频 → 抽帧 → COLMAP(sequential) 重建 → 3DGS/Brush 训练 → 渲染视频/点云
 ```
 
 ## 环境要求
@@ -86,6 +87,36 @@ python scripts/pipeline.py --input input --output output --model models/3dgs
 
 详细说明见 `docs/手机拍摄指南.md`
 
+## 视频重建（路线 B）
+
+不需要逐张拍照——**手机绕物体拍一段视频**，脚本自动抽帧 + 重建：
+
+```bash
+# 一键全流程（默认 gsplat 训练，自动抽帧 + COLMAP + 3DGS + 轻量版导出）
+scripts\_dev\run_env_light.bat scripts\video_pipeline.py --video 视频.mp4
+
+# 常用参数
+--fps 2            # 抽帧帧率（默认 2 = 每 0.5 秒一帧；视频短可调 1）
+--max-steps 30000  # 训练步数
+--engine brush     # 换 Brush 训练（需 --brush-cli 指定 brush-cli.exe）
+--skip-colmap      # 复用已有 colmap/ 目录，只重训
+--skip-train       # 只抽帧 + COLMAP，不训练
+```
+
+**为什么要经 `run_env_light.bat` 运行？** gsplat 训练需要 MSVC + CUDA 环境（JIT 编译 CUDA 扩展）。`run_env_light.bat` 只注入编译器路径、不污染 DLL（完整 vcvars 会与 torch 冲突导致段错误）。
+
+**拍摄建议**：
+- 手机**慢速**绕物体转一圈（30-60 秒），尽量稳，不要甩动
+- 环境光照均匀、物体纹理丰富
+- 14 秒视频 ≈ 28 帧，30-60 秒视频效果最佳
+
+**视频 vs 照片路线差异**（脚本已自动处理）：
+| 环节 | 照片路线 | 视频路线 |
+|---|---|---|
+| 输入 | `input/` 目录 | 单个 `.mp4` |
+| 特征匹配 | exhaustive（两两全匹配） | **sequential**（相邻帧匹配 + 回环检测） |
+| 前置处理 | 无 | ffmpeg 抽帧（`fps=2`） |
+
 ## 项目结构
 
 ```
@@ -95,9 +126,12 @@ python scripts/pipeline.py --input input --output output --model models/3dgs
 ├── models/         # 3DGS 模型（自动生成）
 ├── scripts/
 │   ├── upload_server.py  # 局域网照片上传服务器（手机 WiFi 直传）
-│   ├── run_colmap.py     # COLMAP 重建管线
+│   ├── run_colmap.py     # COLMAP 重建管线（--matcher 可选 exhaustive/sequential）
 │   ├── train_3dgs.py     # 3DGS 训练
-│   └── pipeline.py       # 一键全流程
+│   ├── video_pipeline.py # 视频一键重建（抽帧 → COLMAP → 训练）
+│   ├── export_light.py   # 3DGS 降采样（浏览器流畅查看）
+│   ├── convert_to_brush.py # 标准 PLY → Brush 兼容格式
+│   └── pipeline.py       # 照片一键全流程
 └── docs/           # 文档
 ```
 

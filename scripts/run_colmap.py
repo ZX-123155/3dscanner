@@ -89,6 +89,12 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True, help="输出目录")
     parser.add_argument("--no-dense", action="store_true", help="跳过稠密重建（只需稀疏模型）")
     parser.add_argument("--colmap", type=Path, default=COLMAP_BIN, help="COLMAP 可执行文件路径")
+    parser.add_argument(
+        "--matcher",
+        choices=["exhaustive", "sequential"],
+        default="exhaustive",
+        help="特征匹配方式：exhaustive 适合照片（两两全匹配）；sequential 适合视频抽帧序列（相邻帧匹配，更快）",
+    )
     args = parser.parse_args()
 
     input_dir: Path = args.input
@@ -127,15 +133,26 @@ def main() -> None:
         "特征提取 (feature_extractor)",
     )
 
-    # 2. 特征匹配（108 张图，使用穷举匹配）
-    run_cmd(
-        [
-            colmap, "exhaustive_matcher",
-            "--database_path", database_path,
-            "--FeatureMatching.use_gpu", "true",
-        ],
-        "特征匹配 (exhaustive_matcher)",
-    )
+    # 2. 特征匹配（照片用穷举；视频序列用 sequential，overlap 保证相邻帧连通）
+    if args.matcher == "sequential":
+        run_cmd(
+            [
+                colmap, "sequential_matcher",
+                "--database_path", database_path,
+                "--SequentialMatching.overlap", "10",
+                "--SequentialMatching.loop_detection", "1",
+            ],
+            "特征匹配 (sequential_matcher)",
+        )
+    else:
+        run_cmd(
+            [
+                colmap, "exhaustive_matcher",
+                "--database_path", database_path,
+                "--FeatureMatching.use_gpu", "true",
+            ],
+            "特征匹配 (exhaustive_matcher)",
+        )
 
     # 3. 稀疏重建
     run_cmd(

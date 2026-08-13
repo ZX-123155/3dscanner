@@ -1,5 +1,16 @@
 # 修订日志 (CHANGELOG)
 
+## [0.2.0] - 2026-08-13
+
+### 新增
+- 视频一键重建 `scripts/video_pipeline.py`：视频 → ffmpeg 抽帧 → COLMAP(sequential) → 3DGS/Brush 训练 → 轻量版导出
+- `run_colmap.py` 新增 `--matcher sequential`（视频序列相邻帧匹配 + 回环检测）
+- 轻量 MSVC 环境 `scripts/_dev/run_env_light.bat`（只注入编译器路径，避免完整 vcvars 与 torch 的 DLL 冲突）
+
+### 验证
+- 14.3s 视频：28 帧抽帧 → COLMAP 28 图全部注册 / 9318 点
+- 2000 步训练 + 双格式导出（model.ply + model_brush.ply）通过
+
 ## [0.1.0] - 2026-08-06
 
 ### 新增
